@@ -70,6 +70,19 @@ class AnalyzeSourceTests(unittest.TestCase):
     def test_reports_exec_calls(self):
         self.assertIn("S102", self.codes("exec('x = 1')\n"))
 
+    def test_diagnostics_are_sorted_by_source_location(self):
+        source = (
+            "import os\n"
+            "def calculate():\n"
+            "    try:\n"
+            "        eval('1 + 1')\n"
+            "    except:\n"
+            "        return 1 / 0\n"
+        )
+        diagnostics = analyze_source(source, max_line_length=0)
+        locations = [(item.line, item.column, item.code) for item in diagnostics]
+        self.assertEqual(sorted(locations), locations)
+
     def test_deep_syntax_tree_does_not_crash_static_checks(self):
         source = "+".join(["1"] * 500)
         diagnostics = analyze_source(source, max_line_length=0)
@@ -99,6 +112,17 @@ class AnalyzeSourceTests(unittest.TestCase):
             path = Path(directory) / "latin.py"
             path.write_bytes(b"# -*- coding: latin-1 -*-\nname = 'caf\xe9'\n")
             self.assertEqual([], analyze_file(str(path), max_line_length=0))
+
+    def test_file_analysis_does_not_execute_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "target.py"
+            marker = Path(directory) / "executed.txt"
+            source = "from pathlib import Path\nPath({!r}).write_text('ran')\n".format(str(marker))
+            path.write_text(source, encoding="utf-8")
+
+            analyze_file(str(path), max_line_length=0)
+
+            self.assertFalse(marker.exists())
 
     def test_missing_file_returns_a_diagnostic_instead_of_raising(self):
         with tempfile.TemporaryDirectory() as directory:

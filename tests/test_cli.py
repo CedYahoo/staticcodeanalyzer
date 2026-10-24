@@ -42,6 +42,11 @@ class CommandLineTests(unittest.TestCase):
         self.assertEqual(str(path), payload["path"])
         self.assertEqual(1, payload["summary"]["errors"])
         self.assertEqual("SYN001", payload["diagnostics"][0]["code"])
+        diagnostic = payload["diagnostics"][0]
+        self.assertTrue({"path", "line", "column", "code", "severity", "message"}.issubset(diagnostic))
+        self.assertEqual(1, diagnostic["line"])
+        self.assertGreater(diagnostic["column"], 0)
+        self.assertEqual("error", diagnostic["severity"])
 
     def test_missing_file_returns_exit_code_two(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -71,7 +76,7 @@ class CommandLineTests(unittest.TestCase):
         self.assertEqual("imported\n", result.stdout)
         self.assertEqual("", result.stderr)
 
-    def test_watch_reanalyzes_when_the_file_signature_changes(self):
+    def test_watch_reanalyzes_and_emits_json_when_the_file_signature_changes(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "watched.py"
             path.write_text("value = 1\n", encoding="utf-8")
@@ -84,10 +89,12 @@ class CommandLineTests(unittest.TestCase):
                 codeanalyzer.time, "sleep", side_effect=sleep_results
             ):
                 with contextlib.redirect_stdout(output), self.assertRaises(KeyboardInterrupt):
-                    codeanalyzer.watch_file(path, interval=0.1)
+                    codeanalyzer.watch_file(path, interval=0.1, output_format="json")
 
         self.assertEqual(2, emit.call_count)
-        self.assertEqual(2, output.getvalue().count("no issues found"))
+        payloads = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual(2, len(payloads))
+        self.assertTrue(all(payload["path"] == str(path) for payload in payloads))
 
 
 if __name__ == "__main__":
